@@ -31,13 +31,22 @@ def map_header(h: str) -> str:
 
 def upsert(cur, table, where: dict, data: dict):
     # Direct Postgres upsert by a unique field
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]+$', str(table)):
+        raise ValueError("Invalid input")
     wh_cols = list(where.keys())
+    for col in wh_cols:
+        if not re.match(r'^[a-zA-Z0-9_]+$', str(col)):
+            raise ValueError("Invalid input")
     wh_vals = [where[k] for k in wh_cols]
     cur.execute(f"SELECT * FROM {table} WHERE " + " AND ".join([f"{k}=%s" for k in wh_cols]) + " LIMIT 1", wh_vals)
     row = cur.fetchone()
     if row:
         return row
     cols = list(data.keys())
+    for col in cols:
+        if not re.match(r'^[a-zA-Z0-9_]+$', str(col)):
+            raise ValueError("Invalid input")
     vals = [data[k] for k in cols]
     cur.execute(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join(['%s']*len(cols))}) RETURNING *", vals)
     return cur.fetchone()
