@@ -48,6 +48,7 @@ except Exception:
 # Postgres (Directus DB)
 import psycopg2
 import psycopg2.extras
+from psycopg2 import sql
 
 
 # ============================
@@ -951,7 +952,10 @@ def import_upload():
 
                 cols = list(line.keys())
                 cur.execute(
-                    f"INSERT INTO po_lines ({','.join(cols)}) VALUES ({','.join(['%s']*len(cols))})",
+                    sql.SQL("INSERT INTO po_lines ({}) VALUES ({})").format(
+                        sql.SQL(',').join(sql.Identifier(c) for c in cols),
+                        sql.SQL(',').join(sql.Placeholder() * len(cols))
+                    ),
                     [line[c] for c in cols]
                 )
                 created += 1
