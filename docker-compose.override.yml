@@ -1,0 +1,4 @@
+services:
+  api:
+    ports:
+      - "3030:3000"

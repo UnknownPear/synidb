@@ -1,0 +1,16 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.3
+psycopg2-binary==2.9.9
+
+requests==2.32.3
+beautifulsoup4==4.12.3
+python-multipart==0.0.9
+openpyxl==3.1.5
+google-generativeai>=0.8.0
+python-dotenv>=1.0.0   # optional, but helpful
+redis==5.0.6
+rq==1.16.2
+cloudinary
+duckduckgo-search>=6.0.0
+apscheduler
+pyjwt

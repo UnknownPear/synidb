@@ -1,0 +1,102 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: synergy
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d synergy"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backup:
+    build:
+      context: ./backup
+    init: true
+    restart: always
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - R2_ENDPOINT_URL=${R2_ENDPOINT_URL}
+      - R2_BUCKET=${R2_BUCKET}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  api:
+    build: ./fastapi
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://app:app@db:5432/synergy
+      PORT: 8000
+      AI_FIRST: "1"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      VITE_GEMINI_API_KEY: "${VITE_GEMINI_API_KEY}"
+      VITE_EBAY_MARKETPLACE_ID: EBAY_US
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:8000"
+    volumes:
+      - ./fastapi:/app
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').getcode()==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    env_file:
+      - .env
+
+  worker:
+    build: ./fastapi
+    restart: unless-stopped
+    command: ["rq", "worker", "aiq"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://app:app@db:5432/synergy
+      AI_FIRST: "1"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./fastapi:/app
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport os,redis,sys\nr=redis.from_url(os.getenv('REDIS_URL','redis://redis:6379/0'))\nsys.exit(0 if r.ping() else 1)\nPY"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    env_file:
+      - .env
+
+volumes:
+  pgdata:

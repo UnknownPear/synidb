@@ -1,0 +1,138 @@
+name: synergydashboard
+services:
+  api:
+    build:
+      context: /Users/postingstation1/Downloads/synergy dashboard/api
+      dockerfile: Dockerfile
+    command:
+      - sh
+      - -c
+      - sleep 10 && node dist/index.js
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+    environment:
+      DATABASE_URL: postgresql://app:app@db:5432/synergy
+      PORT: "3000"
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:3000/health
+      timeout: 10s
+      interval: 30s
+      retries: 5
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3000
+        published: "3000"
+        protocol: tcp
+      - mode: ingress
+        target: 3000
+        published: "3030"
+        protocol: tcp
+    restart: unless-stopped
+  db:
+    environment:
+      POSTGRES_DB: synergy
+      POSTGRES_PASSWORD: app
+      POSTGRES_USER: app
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U app -d synergy
+      timeout: 3s
+      interval: 5s
+      retries: 20
+    image: postgres:16
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 5432
+        published: "5432"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: pgdata
+        target: /var/lib/postgresql/data
+        volume: {}
+      - type: bind
+        source: /Users/postingstation1/Downloads/synergy dashboard/db
+        target: ro
+        bind:
+          create_host_path: true
+  directus:
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+    environment:
+      ADMIN_EMAIL: admin@local
+      ADMIN_PASSWORD: supersecret
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: '*'
+      DB_CLIENT: pg
+      DB_DATABASE: synergy
+      DB_HOST: db
+      DB_PASSWORD: app
+      DB_PORT: "5432"
+      DB_USER: app
+      KEY: C8D791AA18857EE621698EAB6A685
+      SECRET: 5157A84A4E2516898D4D47A9D5D49
+      WEBSOCKETS_ENABLED: "true"
+    image: directus/directus:latest
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8055
+        published: "8055"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: directus_uploads
+        target: /directus/uploads
+        volume: {}
+      - type: volume
+        source: directus_extensions
+        target: /directus/extensions
+        volume: {}
+  gateway:
+    container_name: synergy-gateway
+    depends_on:
+      api:
+        condition: service_started
+        required: true
+    image: nginx:alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3030
+        published: "3030"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /Users/postingstation1/Downloads/synergy dashboard/infra/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind:
+          create_host_path: true
+networks:
+  default:
+    name: synergydashboard_default
+volumes:
+  directus_extensions:
+    name: synergydashboard_directus_extensions
+  directus_uploads:
+    name: synergydashboard_directus_uploads
+  pgdata:
+    name: synergydashboard_pgdata

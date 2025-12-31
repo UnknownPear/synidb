@@ -1,0 +1,12 @@
+Flask==3.0.3
+flask-cors==4.0.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+python-dotenv==1.0.1
+openpyxl==3.1.5
+psycopg2-binary==2.9.9
+urllib3==2.2.3
+gunicorn==22.0.0
+# playwright is optional/heavy; add only if you plan to use it inside the container
+# playwright==1.47.0

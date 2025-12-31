@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTA V Clone (Top-Down 2D)</title>
+    <style>
+        /* Basic CSS Reset & Styling */
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #111;
+            font-family: 'Arial', sans-serif;
+            color: white;
+        }
+        canvas {
+            display: block;
+            background-color: #3a5941; /* Dark grass color */
+        }
+        #instructions {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        #instructions h1 {
+            margin: 0 0 5px 0;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="instructions">
+        <h1>Top-Down GTA</h1>
+        <p><strong>Controls:</strong> Arrow keys to drive.</p>
+        <p>Try not to attract the cops!</p>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // --- GAME SETUP ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let screenWidth, screenHeight;
+        const world = { width: 2000, height: 2000 };
+        const camera = { x: 0, y: 0 };
+
+        // --- GAME ENTITIES ---
+        const player = {
+            x: world.width / 2,
+            y: world.height / 2,
+            width: 20,
+            height: 40,
+            angle: 0,
+            speed: 0,
+            maxSpeed: 6,
+            turnSpeed: 0.05,
+            acceleration: 0.1,
+            friction: 0.05
+        };
+
+        const keys = {
+            ArrowUp: false,
+            ArrowDown: false,
+            ArrowLeft: false,
+            ArrowRight: false
+        };
+
+        const gameState = {
+            wantedLevel: 0,
+            maxWantedLevel: 5,
+            wantedTimer: 0,
+            wantedCooldown: 200, // Time before wanted level drops
+        };
+
+        const buildings = [];
+        const roads = [];
+        const traffic = [];
+        const pedestrians = [];
+        const police = [];
+
+        // --- INITIALIZATION ---
+        function init() {
+            resizeCanvas();
+            generateWorld();
+            gameLoop();
+        }
+
+        function resizeCanvas() {
+            screenWidth = window.innerWidth;
+            screenHeight = window.innerHeight;
+            canvas.width = screenWidth;
+            canvas.height = screenHeight;
+        }
+
+        function generateWorld() {
+            // Generate Roads
+            roads.push({ x: 0, y: world.height / 2 - 50, width: world.width, height: 100 });
+            roads.push({ x: world.width / 2 - 50, y: 0, width: 100, height: world.height });
+            roads.push({ x: 0, y: world.height / 4 - 25, width: world.width, height: 50 });
+            roads.push({ x: 0, y: world.height * 3 / 4 - 25, width: world.width, height: 50 });
+            roads.push({ x: world.width / 4 - 25, y: 0, width: 50, height: world.height });
+            roads.push({ x: world.width * 3 / 4 - 25, y: 0, width: 50, height: world.height });
+
+            // Generate Buildings
+            for (let i = 0; i < 50; i++) {
+                buildings.push({
+                    x: Math.random() * world.width,
+                    y: Math.random() * world.height,
+                    width: 50 + Math.random() * 150,
+                    height: 50 + Math.random() * 150
+                });
+            }
+
+            // Generate Traffic
+            for (let i = 0; i < 20; i++) {
+                traffic.push(createVehicle());
+            }
+
+            // Generate Pedestrians
+            for (let i = 0; i < 50; i++) {
+                pedestrians.push(createPedestrian());
+            }
+        }
+
+        function createVehicle() {
+            const road = roads[Math.floor(Math.random() * roads.length)];
+            return {
+                x: Math.random() * world.width,
+                y: Math.random() * world.height,
+                width: 20,
+                height: 40,
+                speed: 1 + Math.random() * 2,
+                angle: Math.random() > 0.5 ? 0 : Math.PI / 2,
+                color: `hsl(${Math.random() * 360}, 50%, 50%)`
+            };
+        }
+
+        function createPedestrian() {
+            return {
+                x: Math.random() * world.width,
+                y: Math.random() * world.height,
+                radius: 5,
+                speed: 0.5 + Math.random() * 0.5,
+                angle: Math.random() * Math.PI * 2,
+                color: '#ddd'
+            };
+        }
+        
+        // --- GAME LOOP ---
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- UPDATE LOGIC ---
+        function update() {
+            updatePlayer();
+            updateTraffic();
+            updatePedestrians();
+            updatePolice();
+            updateCamera();
+            checkCollisions();
+            updateWantedLevel();
+        }
+
+        function updatePlayer() {
+            // Movement
+            if (keys.ArrowUp) {
+                player.speed += player.acceleration;
+            } else if (keys.ArrowDown) {
+                player.speed -= player.acceleration;
+            } else {
+                if (player.speed > 0) player.speed -= player.friction;
+                if (player.speed < 0) player.speed += player.friction;
+            }
+            // Stop tiny movements
+            if (Math.abs(player.speed) < player.friction) {
+                player.speed = 0;
+            }
+
+            // Clamp speed
+            player.speed = Math.max(-player.maxSpeed / 2, Math.min(player.maxSpeed, player.speed));
+
+            // Turning
+            if (player.speed !== 0) {
+                const flip = player.speed < 0 ? -1 : 1;
+                if (keys.ArrowLeft) {
+                    player.angle -= player.turnSpeed * flip;
+                }
+                if (keys.ArrowRight) {
+                    player.angle += player.turnSpeed * flip;
+                }
+            }
+
+            // Update position
+            player.x += Math.sin(player.angle) * player.speed;
+            player.y -= Math.cos(player.angle) * player.speed;
+
+            // World bounds
+            player.x = Math.max(0, Math.min(world.width, player.x));
+            player.y = Math.max(0, Math.min(world.height, player.y));
+        }
+        
+        function updateTraffic() {
+            traffic.forEach(car => {
+                car.x += Math.sin(car.angle) * car.speed;
+                car.y -= Math.cos(car.angle) * car.speed;
+                if (car.x > world.width) car.x = 0;
+                if (car.x < 0) car.x = world.width;
+                if (car.y > world.height) car.y = 0;
+                if (car.y < 0) car.y = world.height;
+            });
+        }
+
+        function updatePedestrians() {
+            pedestrians.forEach(p => {
+                p.x += Math.sin(p.angle) * p.speed;
+                p.y -= Math.cos(p.angle) * p.speed;
+                if (p.x > world.width || p.x < 0 || p.y > world.height || p.y < 0) {
+                    p.x = Math.random() * world.width;
+                    p.y = Math.random() * world.height;
+                }
+            });
+        }
+
+        function updatePolice() {
+            police.forEach(cop => {
+                const angleToPlayer = Math.atan2(player.y - cop.y, player.x - cop.x) + Math.PI / 2;
+                cop.angle += (angleToPlayer - cop.angle) * 0.1;
+                cop.x += Math.sin(cop.angle) * cop.speed;
+                cop.y -= Math.cos(cop.angle) * cop.speed;
+            });
+
+            if (gameState.wantedLevel > police.length) {
+                police.push({
+                    x: player.x + (Math.random() - 0.5) * 1000,
+                    y: player.y + (Math.random() - 0.5) * 1000,
+                    width: 20,
+                    height: 40,
+                    speed: 3 + Math.random(),
+                    angle: 0,
+                    color: 'blue'
+                });
+            } else if (gameState.wantedLevel < police.length) {
+                police.pop();
+            }
+        }
+
+        function updateCamera() {
+            camera.x = player.x - screenWidth / 2;
+            camera.y = player.y - screenHeight / 2;
+        }
+        
+        function updateWantedLevel() {
+            if (gameState.wantedLevel > 0) {
+                gameState.wantedTimer++;
+                if (gameState.wantedTimer > gameState.wantedCooldown) {
+                    gameState.wantedLevel--;
+                    gameState.wantedTimer = 0;
+                }
+            }
+        }
+
+        function checkCollisions() {
+            // Player vs Buildings
+            buildings.forEach(b => {
+                if (rectIntersect(player, b)) {
+                    player.speed *= -0.5;
+                }
+            });
+            
+            // Player vs Traffic
+            traffic.forEach(car => {
+                if (rectIntersect(player, car)) {
+                    player.speed *= 0.5;
+                    car.speed *= -0.5;
+                    if (gameState.wantedLevel < gameState.maxWantedLevel) gameState.wantedLevel++;
+                    gameState.wantedTimer = 0;
+                }
+            });
+            
+            // Player vs Pedestrians
+            pedestrians.forEach((p, index) => {
+                const dist = Math.hypot(player.x - p.x, player.y - p.y);
+                if (dist < player.height / 2 + p.radius) {
+                    pedestrians.splice(index, 1); // Remove pedestrian
+                    if (gameState.wantedLevel < gameState.maxWantedLevel) gameState.wantedLevel++;
+                    gameState.wantedTimer = 0;
+                }
+            });
+        }
+
+        function rectIntersect(r1, r2) {
+            return !(r2.x > r1.x + r1.width || 
+                     r2.x + r2.width < r1.x || 
+                     r2.y > r1.y + r1.height ||
+                     r2.y + r2.height < r1.y);
+        }
+
+        // --- DRAWING LOGIC ---
+        function draw() {
+            ctx.clearRect(0, 0, screenWidth, screenHeight);
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+
+            drawRoads();
+            drawBuildings();
+            drawPedestrians();
+            drawTraffic();
+            drawPolice();
+            drawPlayer();
+
+            ctx.restore();
+
+            drawUI();
+        }
+
+        function drawRoads() {
+            ctx.fillStyle = '#444';
+            roads.forEach(r => {
+                ctx.fillRect(r.x, r.y, r.width, r.height);
+            });
+        }
+
+        function drawBuildings() {
+            ctx.fillStyle = '#222';
+            buildings.forEach(b => {
+                ctx.fillRect(b.x, b.y, b.width, b.height);
+            });
+        }
+
+        function drawPlayer() {
+            drawCar(player, 'red');
+        }
+
+        function drawTraffic() {
+            traffic.forEach(car => drawCar(car, car.color));
+        }
+
+        function drawPolice() {
+            police.forEach(cop => {
+                drawCar(cop, 'blue');
+                // Flashing lights
+                ctx.fillStyle = Math.floor(Date.now() / 250) % 2 === 0 ? 'red' : 'blue';
+                ctx.save();
+                ctx.translate(cop.x, cop.y);
+                ctx.rotate(cop.angle);
+                ctx.fillRect(-5, -cop.height/2 - 5, 10, 5);
+                ctx.restore();
+            });
+        }
+
+        function drawCar(car, color) {
+            ctx.save();
+            ctx.translate(car.x, car.y);
+            ctx.rotate(car.angle);
+
+            // Car body
+            ctx.fillStyle = color;
+            ctx.fillRect(-car.width / 2, -car.height / 2, car.width, car.height);
+            
+            // Windshield
+            ctx.fillStyle = 'rgba(173, 216, 230, 0.7)'; // Light blue
+            ctx.fillRect(-car.width/2 + 3, -car.height/2 + 5, car.width - 6, 10);
+
+            ctx.restore();
+        }
+        
+        function drawPedestrians() {
+            pedestrians.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawUI() {
+            // Wanted Level
+            for (let i = 0; i < gameState.maxWantedLevel; i++) {
+                ctx.fillStyle = i < gameState.wantedLevel ? '#FFD700' : '#555';
+                ctx.font = '24px Arial';
+                ctx.fillText('★', screenWidth - 30 * (i + 1), 30);
+            }
+            
+            // Mini-map
+            const mapSize = 150;
+            const mapX = screenWidth - mapSize - 10;
+            const mapY = screenHeight - mapSize - 10;
+            const scale = mapSize / world.width;
+
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(mapX, mapY, mapSize, mapSize);
+
+            // Draw roads on map
+            ctx.fillStyle = '#666';
+            roads.forEach(r => {
+                ctx.fillRect(mapX + r.x * scale, mapY + r.y * scale, r.width * scale, r.height * scale);
+            });
+            
+            // Draw player on map
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(mapX + player.x * scale, mapY + player.y * scale, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw police on map
+            ctx.fillStyle = 'blue';
+            police.forEach(cop => {
+                 ctx.beginPath();
+                 ctx.arc(mapX + cop.x * scale, mapY + cop.y * scale, 2, 0, Math.PI * 2);
+                 ctx.fill();
+            });
+        }
+
+
+        // --- EVENT LISTENERS ---
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('keydown', e => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = true;
+            }
+        });
+        window.addEventListener('keyup', e => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = false;
+            }
+        });
+
+        // --- START GAME ---
+        init();
+    </script>
+
+</body>
+</html>
